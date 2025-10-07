@@ -20,5 +20,5 @@ from .locations_loader import CatalogLoader
 from . import models
 
 __all__ = ["CargosAPI", "CargosRecordMapper", "CargoException", "InvalidInput", "InvalidResponse", "CatalogLoader", "models"]
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 

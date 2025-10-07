@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is inspired by Keep a Changelog; versions follow SemVer.
 
 
+## [0.2.2] - 2025-10-07
+### Changed
+- Version bump to 0.2.2 for public release and tagging.
+
+### Added
+- Mapper: `build_record(..., with_map=True)` to return the record plus a JSON-like mapping of fields to padded slices.
+- Mapper: `collect_errors=True` to collect validation issues instead of raising, returning `(record, errors)` or `(record, mapping, errors)`.
+- CI: Verify all packaged CSV catalogs (luoghi, tipo_documento, tipo_pagamento, tipo_veicolo) are present in the wheel.
+
+
+
 ## [0.2.1] - 2025-10-07
 ### Added
 - Mapper: `build_record(..., collect_errors=True)` to collect validation issues instead of raising exceptions. The return shape becomes `(record, errors)` or `(record, mapping, errors)` when `with_map=True`.
