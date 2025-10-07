@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Iterable, List, Dict, Tuple, Union
 from .models import BookingData
+from .locations_loader import CatalogLoader
 
 
 class CargosRecordError(ValueError):
@@ -120,6 +121,15 @@ class CargosRecordMapper:
     RECORD_LENGTH = 1505
 
     # ---------- Public API ----------
+
+    def location_name_from_code(self, code: Union[int, str]) -> str:
+        """Return the city/country description for a given Ca.R.G.O.S. luogo code.
+
+        Notes
+        -----
+        Uses CatalogLoader to resolve codes from the packaged `luoghi.csv` dataset.
+        """
+        return CatalogLoader().location_name(code)
 
     def build_record(self, b: BookingData, *, with_map: bool = False, collect_errors: bool = False) -> Union[str, Tuple[str, Dict[str, str]], Tuple[str, List[str]], Tuple[str, Dict[str, str], List[str]]]:
         """Return a single fixed-width record (length 1505).

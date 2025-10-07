@@ -35,6 +35,7 @@ class CatalogLoader:
         self._fallback = fallback
 
         self._luoghi_by_desc: Dict[str, str] = {}
+        self._luoghi_by_code: Dict[str, str] = {}
         self._docs_by_desc: Dict[str, str] = {}
         self._pay_by_desc: Dict[str, str] = {}
         self._veh_by_desc: Dict[str, str] = {}
@@ -48,6 +49,13 @@ class CatalogLoader:
 
     def location_code(self, name: str) -> str:
         return self._by_desc(self._luoghi_by_desc, name, kind="location")
+
+    def location_name(self, code: Union[int, str]) -> str:
+        """Return the city/country description for a given Ca.R.G.O.S. luogo code."""
+        key = str(int(code)) if isinstance(code, int) else str(code).strip()
+        if key in self._luoghi_by_code:
+            return self._luoghi_by_code[key]
+        raise ValueError(f"location code not found: {code!r}")
 
     def document_type_code(self, description: str) -> str:
         return self._by_desc(self._docs_by_desc, description, kind="document")
@@ -76,6 +84,7 @@ class CatalogLoader:
             if not code or not desc or fine:
                 continue
             self._luoghi_by_desc[desc.lower()] = code
+            self._luoghi_by_code[code] = desc
 
     def _load_simple_map(self, filename: str, *, code_col: str, desc_col: str) -> Dict[str, str]:
         text = self._read_text(filename)
