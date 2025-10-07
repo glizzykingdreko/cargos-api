@@ -14,8 +14,9 @@ A small Python library to build and submit rental booking records to the Italian
 - [Formatting the data](#formatting-the-data)
   - [Required fields](#required-fields)
   - [Optional fields](#optional-fields)
-  - [Location and country codes](#location-and-country-codes)
+  - [Lookup tables (locations, documents, payments, vehicles)](#lookup-tables-locations-documents-payments-vehicles)
 - [API usage notes](#api-usage-notes)
+- [Inspecting the record as a mapping](#inspecting-the-record-as-a-mapping)
 
 ---
 
@@ -36,52 +37,52 @@ pip install cargos-api
 ## Quick start
 
 ```python
-from cargos_api import CargosAPI, DataToCargosMapper, models as m
+from cargos_api import CargosAPI, CargosRecordMapper, models as m
 
-# Provide your credentials
-api = CargosAPI(username="...", password="...", api_key="...")
+# Credentials
+api = CargosAPI(username="...", password="...", api_key="...48-chars...")
 
-# Prepare data
+# Build a booking using codes from your catalogs (examples below use placeholder codes)
 booking = m.BookingData(
-    id="1",
-    creation_date="2025-01-01T10:00:00",
-    from_date="2025-01-01T11:00:00",
-    to_date="2025-01-02T11:00:00",
-    customer=m.Customer(
-        firstname="Mario",
-        lastname="Rossi",
-        birth_date="1990-01-01",
-        birth_place="Genova",
-        citizenship="Italia",
-        document_id="XYZ123",
-        cellphone="0000000000",
+    contract_id="CONTR-001",
+    contract_datetime="2025-01-01T10:00:00",   # ISO-like; mapper outputs dd/mm/YYYY HH:MM
+    payment_type_code="1",                     # per Ca.R.G.O.S. table
+    checkout_datetime="2025-01-01T11:00:00",
+    checkout_place=m.Address(location_code=403015146, street="Via X 1"),  # Roma (example)
+    checkin_datetime="2025-01-02T11:00:00",
+    checkin_place=m.Address(location_code=402020327, street="Via Y 2"),    # Verona (example)
+    operator=m.Operator(
+        id="SYSTEM",
+        agency_id="1",
+        agency_name="ACME",
+        agency_place_code=403015146,
+        agency_address="Via Z 3",
+        agency_phone="0000",
     ),
     car=m.Car(
+        type_code="A",  # vehicle type code (per table)
         brand="Fiat",
         model="Panda",
         plate="AB123CD",
-        color="Bianco"
+        color="Bianco",
     ),
-    delivery_place=m.Address(
-        address="Via X 1",
-        address_city="Genova"
+    customer=m.Customer(
+        surname="Rossi",
+        name="Mario",
+        birth_date="1990-01-01",
+        birth_place_code=401028044,           # Genova (example)
+        citizenship_code=100000001,           # Italia (example)
+        id_doc_type_code="CI",
+        id_doc_number="XYZ12345",
+        id_doc_issuing_place_code=401028044,
+        driver_licence_number="LIC123456",
+        driver_licence_issuing_place_code=401028044,
+        contact="0000000000",
     ),
-    return_place=m.Address(
-        address="Via Y 2",
-        address_city="Verona"
-    ),
-)
-operator = m.Operator(
-    id="SYSTEM",
-    agency_id="1",
-    agency_name="ACME",
-    city="Roma",
-    address="Via Z",
-    phone="0000"
 )
 
 # Map to Ca.R.G.O.S. fixed-width record (1505 chars)
-record = DataToCargosMapper().map_booking_to_cargos(booking, operator)
+record = CargosRecordMapper().build_record(booking)
 
 # Validate or send
 api.check_contracts([record])
@@ -92,11 +93,70 @@ api.check_contracts([record])
 
 This library exposes typed dataclasses in `cargos_api.models` that you fill with your normalized data and pass to the mapper.
 
-- `BookingData`: `id`, `creation_date`, `from_date`, `to_date`, `car`, `customer`, `delivery_place`, `return_place`
-- `Customer`: `firstname`, `lastname`, `birth_date`, `birth_place`, `citizenship`, `document_id` or `driver_licence_number`, `cellphone` or `email`, `address` (optional)
-- `Car`: `brand`, `model`, `plate`, `color`
-- `Address`: `address_city` and `address` are consumed by the mapper (country optional)
-- `Operator`: `id`, `agency_id`, `agency_name`, `city`, `address`, `phone`
+- `BookingData`: `contract_id`, `contract_datetime`, `payment_type_code`, `checkout_datetime`, `checkout_place` (Address), `checkin_datetime`, `checkin_place` (Address), `operator` (Operator), `car` (Car), `customer` (Customer), `second_driver` (optional)
+- `Customer`: `surname`, `name`, `birth_date`, `birth_place_code`, `citizenship_code`, `residence` (Address, optional), `id_doc_type_code`, `id_doc_number`, `id_doc_issuing_place_code`, `driver_licence_number`, `driver_licence_issuing_place_code`, `contact`
+- `SecondDriver`: same as `Customer` (without `residence`); if present, all fields are mandatory
+- `Car`: `type_code`, `brand`, `model`, `plate`, `color` (optional), `has_gps` (optional), `has_immobilizer` (optional)
+- `Address`: `location_code`, `street`
+- `Operator`: `id`, `agency_id`, `agency_name`, `agency_place_code`, `agency_address`, `agency_phone`
+
+### Ca.R.G.O.S. Tracciato Record Parameters
+
+| Name | Required | Description |
+|------|-----------|-------------|
+| CONTRATTO_ID | ✅ | Unique contract identifier |
+| CONTRATTO_DATA | ✅ | Contract date (format `gg/mm/aaaa hh:mm`) |
+| CONTRATTO_TIPOP | ✅ | Payment type (see **TABELLA TIPO PAGAMENTI**) |
+| CONTRATTO_CHECKOUT_DATA | ✅ | Checkout date (format `gg/mm/aaaa hh:mm`) |
+| CONTRATTO_CHECKOUT_LUOGO_COD | ✅ | Police location code (**TABELLA LUOGHI POLIZIA**) |
+| CONTRATTO_CHECKOUT_INDIRIZZO | ✅ | Checkout address (length > 3) |
+| CONTRATTO_CHECKIN_DATA | ✅ | Check-in date (format `gg/mm/aaaa hh:mm`) |
+| CONTRATTO_CHECKIN_LUOGO_COD | ✅ | Police location code (**TABELLA LUOGHI POLIZIA**) |
+| CONTRATTO_CHECKIN_INDIRIZZO | ✅ | Check-in address (length > 3) |
+| OPERATORE_ID | ✅ | Operator identifier |
+| AGENZIA_ID | ✅ | Agency identifier (unique) |
+| AGENZIA_NOME | ✅ | Agency name |
+| AGENZIA_LUOGO_COD | ✅ | Police location code (**TABELLA LUOGHI POLIZIA**) |
+| AGENZIA_INDIRIZZO | ✅ | Agency address (length > 3) |
+| AGENZIA_RECAPITO_TEL | ✅ | Agency phone number (length > 3) |
+| VEICOLO_TIPO | ✅ | Vehicle type (**TABELLA TIPO VEICOLO**) |
+| VEICOLO_MARCA | ✅ | Vehicle brand |
+| VEICOLO_MODELLO | ✅ | Vehicle model |
+| VEICOLO_TARGA | ✅ | Vehicle plate number (length > 3) |
+| VEICOLO_COLORE | ❌ | Vehicle color |
+| VEICOLO_GPS | ❌ | GPS presence flag |
+| VEICOLO_BLOCCOM | ❌ | Immobilizer presence flag |
+| CONDUCENTE_CONTRAENTE_COGNOME | ✅ | Driver’s surname |
+| CONDUCENTE_CONTRAENTE_NOME | ✅ | Driver’s name |
+| CONDUCENTE_CONTRAENTE_NASCITA_DATA | ✅ | Driver’s date of birth (`gg/mm/aaaa`) |
+| CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD | ✅ | Birthplace (**COMUNE ITALIANO** or **STATO ESTERO**) |
+| CONDUCENTE_CONTRAENTE_CITTADINANZA_COD | ✅ | Citizenship code (**TABELLA LUOGHI POLIZIA**) |
+| CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD | ❌* | Residence (**COMUNE ITALIANO** or **STATO ESTERO**) |
+| CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO | ❌* | Residence address (e.g., “VIA DEL CASTRO PRETORIO 10, ROMA”) |
+| CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD | ✅ | Document type (**TABELLA DOCUMENTI POLIZIA**) |
+| CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO | ✅ | Document number (length > 4) |
+| CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD | ✅ | Document issuing place (**COMUNE ITALIANO** or **STATO ESTERO**) |
+| CONDUCENTE_CONTRAENTE_PATENTE_NUMERO | ✅ | Driver’s license number (length > 4) |
+| CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD | ✅ | License issuing place (**COMUNE ITALIANO** or **STATO ESTERO**) |
+| CONDUCENTE_CONTRAENTE_RECAPITO | ❌ | Driver’s contact number |
+| CONDUCENTE2_COGNOME | ❌** | Second driver surname |
+| CONDUCENTE2_NOME | ❌** | Second driver name |
+| CONDUCENTE2_NASCITA_DATA | ❌** | Second driver date of birth (`gg/mm/aaaa`) |
+| CONDUCENTE2_NASCITA_LUOGO_COD | ❌** | Second driver birthplace (**COMUNE ITALIANO** or **STATO ESTERO**) |
+| CONDUCENTE2_CITTADINANZA_COD | ❌** | Second driver citizenship (**TABELLA LUOGHI POLIZIA**) |
+| CONDUCENTE2_DOCIDE_TIPO_COD | ❌** | Second driver document type |
+| CONDUCENTE2_DOCIDE_NUMERO | ❌** | Second driver document number |
+| CONDUCENTE2_DOCIDE_LUOGORIL_COD | ❌** | Second driver document issuing place |
+| CONDUCENTE2_PATENTE_NUMERO | ❌** | Second driver license number (length > 4) |
+| CONDUCENTE2_PATENTE_LUOGORIL_COD | ❌** | Second driver license issuing place |
+| CONDUCENTE2_RECAPITO | ❌** | Second driver contact number |
+
+---
+
+### Notes
+- `*` → Both residence fields (**LUOGO_COD** and **INDIRIZZO**) must be filled together, otherwise the data is rejected.
+- `**` → If a second driver is present, **all** fields under `CONDUCENTE2_` become **mandatory**.
+- Each block of records must not contain more than **100 contracts** (rows).
 
 ### Required fields
 The mapper validates inputs and raises `InvalidInput` if anything is missing:
@@ -111,10 +171,43 @@ The mapper validates inputs and raises `InvalidInput` if anything is missing:
 - `Customer.address` is emitted as free-text in the record when provided
 - `Address.address_country` is currently not mapped to a dedicated field
 
-### Location and country codes
-- Location names (cities/countries) are resolved to Ca.R.G.O.S. codes using a packaged CSV dataset
-- Lookup is case-insensitive; expired entries (with `DataFineVal`) are ignored
-- If a name is not found, the mapper raises a `ValueError`
+### Lookup tables (locations, documents, payments, vehicles)
+- Packaged CSV catalogs under `cargos_api/data/` are used at runtime:
+  - `luoghi.csv` (location/country codes)
+  - `tipo_documento.csv` (document types)
+  - `tipo_pagamento.csv` (payment types)
+  - `tipo_veicolo.csv` (vehicle types)
+- Lookups are case-insensitive; expired locations (rows with `DataFineVal`) are ignored
+- Use `CatalogLoader` if you need to resolve human-readable labels to Ca.R.G.O.S. codes in your app:
+  ```python
+  from cargos_api.locations_loader import CatalogLoader
+  code = CatalogLoader().document_type_code('CI')
+  ```
+- If a required code is not found, the mapper raises a `ValueError`
+
+## Inspecting the record as a mapping
+Sometimes you want to verify exactly what each field contains after padding/truncation. You can ask the mapper to return both the fixed-width string and a JSON-like mapping of field names to their exact slices by passing `with_map=True`:
+
+```python
+from cargos_api import CargosRecordMapper, models as m
+
+booking = m.BookingData(
+    contract_id="123", contract_datetime="2025-01-05T09:00:00", payment_type_code="1",
+    checkout_datetime="2025-01-06T10:00:00", checkout_place=m.Address(location_code=403015146, street="Via A 10"),
+    checkin_datetime="2025-01-07T10:00:00", checkin_place=m.Address(location_code=403015146, street="Via B 20"),
+    operator=m.Operator(id="SYS", agency_id="AG1", agency_name="ACME", agency_place_code=403015146, agency_address="Via C 30", agency_phone="06..."),
+    car=m.Car(type_code="A", brand="VW", model="Golf", plate="ZZ999ZZ"),
+    customer=m.Customer(
+        surname="Bianchi", name="Anna", birth_date="1985-05-20",
+        birth_place_code=403015146, citizenship_code=100000001,
+        id_doc_type_code="CI", id_doc_number="X1", id_doc_issuing_place_code=403015146,
+        driver_licence_number="L1", driver_licence_issuing_place_code=403015146,
+    ),
+)
+record, mapping = CargosRecordMapper().build_record(booking, with_map=True)
+print(len(record))              # 1505
+print(mapping["CONTRATTO_ID"])  # 50-char padded slice for the contract ID
+```
 
 ## API usage notes
 - `CargosAPI.get_token()` fetches the token using HTTP Basic auth
@@ -123,24 +216,28 @@ The mapper validates inputs and raises `InvalidInput` if anything is missing:
 
 ## Example: minimal end-to-end flow
 ```python
-from cargos_api import CargosAPI, DataToCargosMapper, models as m
+from cargos_api import CargosAPI, CargosRecordMapper, models as m
 
 api = CargosAPI(username="ORG", password="PASS", api_key="...48-chars...")
 booking = m.BookingData(
-    id="123",
-    creation_date="2025-01-05T09:00:00",
-    from_date="2025-01-06T10:00:00",
-    to_date="2025-01-07T10:00:00",
+    contract_id="123",
+    contract_datetime="2025-01-05T09:00:00",
+    payment_type_code="1",
+    checkout_datetime="2025-01-06T10:00:00",
+    checkout_place=m.Address(location_code=403015146, street="Via A 10"),
+    checkin_datetime="2025-01-07T10:00:00",
+    checkin_place=m.Address(location_code=403015146, street="Via B 20"),
+    operator=m.Operator(id="SYS", agency_id="AG1", agency_name="ACME", agency_place_code=403015146, agency_address="Via C 30", agency_phone="06..."),
+    car=m.Car(type_code="A", brand="VW", model="Golf", plate="ZZ999ZZ", color="Nero"),
     customer=m.Customer(
-        firstname="Anna", lastname="Bianchi", birth_date="1985-05-20",
-        birth_place="Roma", citizenship="Italia", document_id="DOC1", cellphone="333..."
+        surname="Bianchi", name="Anna", birth_date="1985-05-20",
+        birth_place_code=403015146, citizenship_code=100000001,
+        id_doc_type_code="CI", id_doc_number="DOC1", id_doc_issuing_place_code=403015146,
+        driver_licence_number="LIC1", driver_licence_issuing_place_code=403015146,
+        contact="333...",
     ),
-    car=m.Car(brand="VW", model="Golf", plate="ZZ999ZZ", color="Nero"),
-    delivery_place=m.Address(address="Via A 10", address_city="Roma"),
-    return_place=m.Address(address="Via B 20", address_city="Roma"),
 )
-operator = m.Operator(id="SYS", agency_id="AG1", agency_name="ACME", city="Roma", address="Via C 30", phone="06...")
-record = DataToCargosMapper().map_booking_to_cargos(booking, operator)
+record = CargosRecordMapper().build_record(booking)
 api.check_contracts([record])
 ```
 

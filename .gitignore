@@ -28,3 +28,9 @@ htmlcov/
 
 # OS
 .DS_Store
+
+
+test_cargo.py
+
+# Local build output
+.wheels/
