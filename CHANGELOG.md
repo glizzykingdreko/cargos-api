@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is inspired by Keep a Changelog; versions follow SemVer.
 
 
+## [0.2.4] - 2025-10-07
+### Changed
+- CargosAPI.send_contracts now returns the server JSON as-is (list of results) and no longer inspects `errore` to raise `InvalidResponse`. Callers should handle any error semantics present in the response payload.
+- Removed internal info log on successful send; behavior is now side-effect free.
+
+
 ## [0.2.3] - 2025-10-07
 ### Added
 - CargosRecordMapper: `location_name_from_code(code)` to convert a Ca.R.G.O.S. luogo code (e.g., 412058091) to its city/country name using the packaged `luoghi.csv` catalog.

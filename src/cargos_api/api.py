@@ -180,9 +180,5 @@ class CargosAPI:
         """
         url = f"{self.BASE_URL}/api/Send"
         resp = requests.post(url, headers=self._auth_headers(), json=contracts, timeout=timeout)
-        data = resp.json()
-        if (errore := data.get("errore")):
-            raise InvalidResponse(f"Send request failed: {errore}")
-        logger.info("Send completed for %d contracts", len(contracts))
-        return data
+        return resp.json()
 
