@@ -121,9 +121,21 @@ class CargosRecordMapper:
 
     # ---------- Public API ----------
 
-    def build_record(self, b: BookingData, *, with_map: bool = False) -> Union[str, Tuple[str, Dict[str, str]]]:
-        """Return a single fixed-width record (length 1505) with full validation."""
+    def build_record(self, b: BookingData, *, with_map: bool = False, collect_errors: bool = False) -> Union[str, Tuple[str, Dict[str, str]], Tuple[str, List[str]], Tuple[str, Dict[str, str], List[str]]]:
+        """Return a single fixed-width record (length 1505).
+
+        Parameters
+        ----------
+        b : BookingData
+            Input booking payload.
+        with_map : bool, optional
+            When True, also return a mapping of field names to their exact padded slices.
+        collect_errors : bool, optional
+            When True, do not raise validation exceptions; instead collect them and return
+            alongside the record (and mapping if requested).
+        """
         p = []  # parts
+        errors: List[str] = []
 
         # Contract
         p.append(self.F["CONTRATTO_ID"].pad(b.contract_id))
@@ -165,7 +177,12 @@ class CargosRecordMapper:
         res_loc = c.residence.location_code if c.residence else None
         res_addr = c.residence.street if c.residence else None
         if bool(res_loc) ^ bool(res_addr):
-            raise CargosRecordError("Residence fields must be provided together (code + street).")
+            msg = "Residence fields must be provided together (code + street)."
+            if collect_errors:
+                errors.append(msg)
+                res_loc, res_addr = None, None  # neutralize inconsistent pair
+            else:
+                raise CargosRecordError(msg)
         p.append(self.F["C1_RESIDENZA_LUOGO_COD"].pad(self._num(res_loc)))
         p.append(self.F["C1_RESIDENZA_INDIRIZZO"].pad(res_addr))
 
@@ -185,20 +202,27 @@ class CargosRecordMapper:
                 sd.id_doc_type_code, sd.id_doc_number, sd.id_doc_issuing_place_code,
                 sd.driver_licence_number, sd.driver_licence_issuing_place_code,
             ]
-            if any(x in (None, "", 0) for x in required):
-                raise CargosRecordError("All CONDUCENTE2_* fields are mandatory when a second driver is present.")
-
-            p.append(self.F["C2_COGNOME"].pad(sd.surname))
-            p.append(self.F["C2_NOME"].pad(sd.name))
-            p.append(self.F["C2_NASCITA_DATA"].pad(DateFormatter.to_d(sd.birth_date)))
-            p.append(self.F["C2_NASCITA_LUOGO_COD"].pad(self._num(sd.birth_place_code)))
-            p.append(self.F["C2_CITTADINANZA_COD"].pad(self._num(sd.citizenship_code)))
-            p.append(self.F["C2_DOCIDE_TIPO_COD"].pad(sd.id_doc_type_code))
-            p.append(self.F["C2_DOCIDE_NUMERO"].pad(sd.id_doc_number))
-            p.append(self.F["C2_DOCIDE_LUOGORIL_COD"].pad(self._num(sd.id_doc_issuing_place_code)))
-            p.append(self.F["C2_PATENTE_NUMERO"].pad(sd.driver_licence_number))
-            p.append(self.F["C2_PATENTE_LUOGORIL_COD"].pad(self._num(sd.driver_licence_issuing_place_code)))
-            p.append(self.F["C2_RECAPITO"].pad(sd.contact))
+            invalid_second = any(x in (None, "", 0) for x in required)
+            if invalid_second:
+                msg = "All CONDUCENTE2_* fields are mandatory when a second driver is present."
+                if collect_errors:
+                    errors.append(msg)
+                    # Pad the whole second-driver segment with spaces instead of partial data
+                    p.append(" " * (self.RECORD_LENGTH - 1315 + 1))
+                else:
+                    raise CargosRecordError(msg)
+            else:
+                p.append(self.F["C2_COGNOME"].pad(sd.surname))
+                p.append(self.F["C2_NOME"].pad(sd.name))
+                p.append(self.F["C2_NASCITA_DATA"].pad(DateFormatter.to_d(sd.birth_date)))
+                p.append(self.F["C2_NASCITA_LUOGO_COD"].pad(self._num(sd.birth_place_code)))
+                p.append(self.F["C2_CITTADINANZA_COD"].pad(self._num(sd.citizenship_code)))
+                p.append(self.F["C2_DOCIDE_TIPO_COD"].pad(sd.id_doc_type_code))
+                p.append(self.F["C2_DOCIDE_NUMERO"].pad(sd.id_doc_number))
+                p.append(self.F["C2_DOCIDE_LUOGORIL_COD"].pad(self._num(sd.id_doc_issuing_place_code)))
+                p.append(self.F["C2_PATENTE_NUMERO"].pad(sd.driver_licence_number))
+                p.append(self.F["C2_PATENTE_LUOGORIL_COD"].pad(self._num(sd.driver_licence_issuing_place_code)))
+                p.append(self.F["C2_RECAPITO"].pad(sd.contact))
         else:
             # Fill the remainder (1315–1505) with spaces
             p.append(" " * (self.RECORD_LENGTH - 1315 + 1))
@@ -206,15 +230,31 @@ class CargosRecordMapper:
         record = "".join(p)
 
         if len(record) != self.RECORD_LENGTH:
-            raise CargosRecordError(f"Record must be {self.RECORD_LENGTH} chars, got {len(record)}")
+            msg = f"Record must be {self.RECORD_LENGTH} chars, got {len(record)}"
+            if collect_errors:
+                errors.append(msg)
+            else:
+                raise CargosRecordError(msg)
 
-        self._validate_required_minima(b)
+        try:
+            self._validate_required_minima(b)
+        except CargosRecordError as e:
+            if collect_errors:
+                errors.append(str(e))
+            else:
+                raise
+
         if with_map:
             mapping: Dict[str, str] = {
                 k: record[f.start - 1 : f.end]
                 for k, f in self.F.items()
             }
+            if collect_errors:
+                return record, mapping, errors
             return record, mapping
+
+        if collect_errors:
+            return record, errors
         return record
 
     def build_batch(self, bookings: Iterable[BookingData]) -> List[str]:

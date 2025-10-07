@@ -1,98 +1,102 @@
 from __future__ import annotations
-
-"""CSV-based loader for Ca.R.G.O.S. locations and countries.
-
-The CSV is expected to have columns: Codice, Descrizione, Provincia, DataFineVal
-Only rows without DataFineVal (active) are considered. Keys are normalized to
-lowercase for lookup.
-
-Data source defaults to a packaged resource (cargos_api/data/luoghi.csv). When
-that resource is not available (e.g., in repo development), it falls back to
-`docs/luoghi.csv` at the repository root.
-"""
-
-from functools import lru_cache
-from typing import Dict
+from typing import Callable, Dict, Optional, Union
 import csv
-from pathlib import Path
+import importlib.resources as pkgres
 
-try:  # Python 3.9+
-    from importlib.resources import files as _res_files  # type: ignore
-except Exception:  # pragma: no cover
-    _res_files = None  # type: ignore
+FallbackT = Union[None, str, int, Callable[[str, str], str]]
 
-
-@lru_cache(maxsize=1)
-def get_locations() -> Dict[str, Dict[str, str]]:
-    """Load locations mapping from CSV.
-
-    Returns
-    -------
-    dict[str, dict[str, str]]
-        Mapping of lowercase name -> {"code": str, "prov": str}
+class CatalogLoader:
     """
-    # 1) Try packaged resource cargos_api/data/luoghi.csv
-    csv_path: Path | None = None
-    if _res_files is not None:
-        try:
-            candidate = _res_files("cargos_api").joinpath("data", "luoghi.csv")
-            if candidate.is_file():  # type: ignore[attr-defined]
-                csv_path = Path(str(candidate))
-        except Exception:
-            pass
+    Loads lookup tables from the installed 'cargos_api' package data folder.
 
-    # 2) Fallback to repo docs/luoghi.csv
-    if csv_path is None:
-        repo_root = Path(__file__).resolve().parents[2]
-        candidate = repo_root / "docs" / "luoghi.csv"
-        if candidate.is_file():
-            csv_path = candidate
+    Defaults:
+      - package='cargos_api'
+      - subdir='data'
+      - filenames: luoghi.csv, tipo_documento.csv, tipo_pagamento.csv, tipo_veicolo.csv
 
-    if csv_path is None:
-        raise FileNotFoundError("luoghi.csv not found in package resources or docs/")
+    Fallback:
+      - fallback can be a constant or a callable(key, kind) -> str
+      - kind ∈ {"location","document","payment","vehicle"}
+    """
 
-    mapping: Dict[str, Dict[str, str]] = {}
-    with csv_path.open(newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
+    def __init__(
+        self,
+        package: str = "cargos_api",
+        *,
+        subdir: str = "data",
+        luoghi_csv: str = "luoghi.csv",
+        tipo_documento_csv: str = "tipo_documento.csv",
+        tipo_pagamento_csv: str = "tipo_pagamento.csv",
+        tipo_veicolo_csv: str = "tipo_veicolo.csv",
+        fallback: FallbackT = None,
+    ) -> None:
+        self.package = package
+        self.subdir = subdir
+        self._fallback = fallback
+
+        self._luoghi_by_desc: Dict[str, str] = {}
+        self._docs_by_desc: Dict[str, str] = {}
+        self._pay_by_desc: Dict[str, str] = {}
+        self._veh_by_desc: Dict[str, str] = {}
+
+        self._load_luoghi_csv(luoghi_csv)
+        self._docs_by_desc = self._load_simple_map(tipo_documento_csv, code_col="CODICE", desc_col="DESCRIZIONE")
+        self._pay_by_desc  = self._load_simple_map(tipo_pagamento_csv, code_col="ID", desc_col="Descrizione")
+        self._veh_by_desc  = self._load_simple_map(tipo_veicolo_csv, code_col="ID", desc_col="Descrizione")
+
+    # ---------- Public lookups ----------
+
+    def location_code(self, name: str) -> str:
+        return self._by_desc(self._luoghi_by_desc, name, kind="location")
+
+    def document_type_code(self, description: str) -> str:
+        return self._by_desc(self._docs_by_desc, description, kind="document")
+
+    def payment_type_code(self, description: str) -> str:
+        return self._by_desc(self._pay_by_desc, description, kind="payment")
+
+    def vehicle_type_code(self, description: str) -> str:
+        return self._by_desc(self._veh_by_desc, description, kind="vehicle")
+
+    # ---------- Internals ----------
+
+    def _read_text(self, filename: str) -> str:
+        base = pkgres.files(self.package).joinpath(self.subdir, filename)
+        return base.read_text(encoding="utf-8")
+
+    def _load_luoghi_csv(self, filename: str) -> None:
+        text = self._read_text(filename)
+        reader = csv.DictReader(text.splitlines())
         for row in reader:
             if not row:
                 continue
-            # Skip expired rows if DataFineVal present
-            data_fine = (row.get("DataFineVal") or "").strip()
-            if data_fine:
-                continue
-            name = (row.get("Descrizione") or "").strip().lower()
             code = (row.get("Codice") or "").strip()
-            prov = (row.get("Provincia") or "").strip()
-            if not name or not code:
+            desc = (row.get("Descrizione") or "").strip()
+            fine = (row.get("DataFineVal") or "").strip()
+            if not code or not desc or fine:
                 continue
-            # Prefer first active entry for a name
-            mapping.setdefault(name, {"code": code, "prov": prov})
-    return mapping
+            self._luoghi_by_desc[desc.lower()] = code
 
+    def _load_simple_map(self, filename: str, *, code_col: str, desc_col: str) -> Dict[str, str]:
+        text = self._read_text(filename)
+        reader = csv.DictReader(text.splitlines())
+        out: Dict[str, str] = {}
+        for row in reader:
+            code = (row.get(code_col) or "").strip()
+            desc = (row.get(desc_col) or "").strip()
+            if code and desc:
+                out[desc.lower()] = code
+        return out
 
-def location_to_code(name: str) -> str:
-    """Return Ca.R.G.O.S. code for a given location/country name.
-
-    Parameters
-    ----------
-    name : str
-        Human-readable name (case-insensitive).
-
-    Returns
-    -------
-    str
-        Code corresponding to the name.
-
-    Raises
-    ------
-    ValueError
-        If the name is not found in the dataset.
-    """
-    m = get_locations()
-    key = (name or "").lower().strip()
-    try:
-        return m[key]["code"]
-    except KeyError as e:
-        raise ValueError(f"Location not found: {name}") from e
-
+    def _by_desc(self, mapping: Dict[str, str], key: str, *, kind: "location|document|payment|vehicle") -> str:
+        look_key = (key or "").strip().lower()
+        if look_key in mapping:
+            return mapping[look_key]
+        if callable(self._fallback):
+            val = self._fallback(key, kind)
+            if not val:
+                raise ValueError(f"{kind} not found and fallback returned empty for {key!r}")
+            return str(val)
+        if self._fallback is not None:
+            return str(self._fallback)
+        raise ValueError(f"{kind} not found: {key!r}")

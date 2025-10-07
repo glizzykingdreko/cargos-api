@@ -1,176 +1,144 @@
 from __future__ import annotations
-
-"""Dataclasses used by the strict Ca.R.G.O.S. mapper.
-
-These classes provide a clear, typed representation of the data needed to build
-Ca.R.G.O.S. fixed-width records. Optional fields default to None. Use together
-with DataToCargosMapper for validation and record generation.
-"""
-
-from dataclasses import asdict, dataclass
 from typing import Optional
 
 
-@dataclass
 class Address:
-    """Address information for delivery, return, or customer residence.
+    """Postal address with an optional Ca.R.G.O.S. 'luogo' code (Comune/State)."""
 
-    Attributes
-    ----------
-    address : Optional[str]
-        Street name.
-    address_number : Optional[str]
-        Street number or civic number.
-    address_city : Optional[str]
-        City/town name (used for Ca.R.G.O.S. location code lookup).
-    address_country : Optional[str]
-        Country name (not used in the current mapping).
-    """
-
-    address: Optional[str] = None
-    address_number: Optional[str] = None
-    address_city: Optional[str] = None
-    address_country: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        return asdict(self)
+    def __init__(self, location_code: Optional[int] = None, street: Optional[str] = None):
+        self.location_code = location_code
+        self.street = street
 
 
-@dataclass
-class Operator:
-    """Rental operator and agency information.
-
-    Attributes
-    ----------
-    id : Optional[str]
-        Operator identifier.
-    agency_id : Optional[str]
-        Agency identifier.
-    agency_name : Optional[str]
-        Agency display name.
-    city : Optional[str]
-        Agency city (used for Ca.R.G.O.S. location code lookup).
-    address : Optional[str]
-        Agency street address.
-    phone : Optional[str]
-        Agency contact phone.
-    """
-
-    id: Optional[str] = None
-    agency_id: Optional[str] = None
-    agency_name: Optional[str] = None
-    city: Optional[str] = None
-    address: Optional[str] = None
-    phone: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-@dataclass
-class Customer:
-    """Primary driver/customer identity and contact details.
-
-    Attributes
-    ----------
-    birth_date : Optional[str]
-        Date of birth in ISO-like format (YYYY-MM-DD or full ISO).
-    birth_place : Optional[str]
-        Birth city/town (used for Ca.R.G.O.S. location code lookup).
-    citizenship : Optional[str]
-        Citizenship/country (used for Ca.R.G.O.S. location code lookup).
-    driver_licence_number : Optional[str]
-        Driver's licence number (alternative to document_id).
-    firstname : Optional[str]
-        Given name.
-    lastname : Optional[str]
-        Family name.
-    address : Optional[Address]
-        Residence address (only free-text is currently emitted in the record).
-    document_id : Optional[str]
-        Identity document number (alternative to driver_licence_number).
-    cellphone : Optional[str]
-        Primary phone number.
-    email : Optional[str]
-        Email address.
-    """
-
-    birth_date: Optional[str] = None
-    birth_place: Optional[str] = None
-    citizenship: Optional[str] = None
-    driver_licence_number: Optional[str] = None
-    firstname: Optional[str] = None
-    lastname: Optional[str] = None
-    address: Optional[Address] = None
-    document_id: Optional[str] = None
-    cellphone: Optional[str] = None
-    email: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-@dataclass
 class Car:
-    """Vehicle details used in the contract record.
+    """Vehicle details according to Ca.R.G.O.S. 'Tracciato Record'."""
 
-    Attributes
-    ----------
-    model : Optional[str]
-        Vehicle model.
-    brand : Optional[str]
-        Vehicle brand/manufacturer.
-    name : Optional[str]
-        Optional marketing name/trim.
-    plate : Optional[str]
-        Vehicle license plate.
-    color : Optional[str]
-        Vehicle color.
-    """
-
-    model: Optional[str] = None
-    brand: Optional[str] = None
-    name: Optional[str] = None
-    plate: Optional[str] = None
-    color: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        return asdict(self)
+    def __init__(
+        self,
+        type_code: str,        # 1 char (Tabella Tipo Veicolo)
+        brand: str,
+        model: str,
+        plate: str,
+        color: Optional[str] = None,
+        has_gps: Optional[bool] = None,
+        has_immobilizer: Optional[bool] = None,
+    ):
+        self.type_code = type_code
+        self.brand = brand
+        self.model = model
+        self.plate = plate
+        self.color = color
+        self.has_gps = has_gps
+        self.has_immobilizer = has_immobilizer
 
 
-@dataclass
+class Customer:
+    """Primary driver / contraente."""
+
+    def __init__(
+        self,
+        surname: str,
+        name: str,
+        birth_date: str,                         # mapper -> dd/mm/YYYY
+        birth_place_code: int,                   # 9 digits
+        citizenship_code: int,                   # 9 digits
+        residence: Optional[Address] = None,     # paired: both code & street or none
+        id_doc_type_code: str = "",              # 5 chars (Tabella Documenti Polizia)
+        id_doc_number: str = "",                 # length > 4
+        id_doc_issuing_place_code: int = 0,      # 9 digits
+        driver_licence_number: str = "",         # length > 4
+        driver_licence_issuing_place_code: int = 0,  # 9 digits
+        contact: Optional[str] = None,           # phone/email
+    ):
+        self.surname = surname
+        self.name = name
+        self.birth_date = birth_date
+        self.birth_place_code = birth_place_code
+        self.citizenship_code = citizenship_code
+        self.residence = residence
+        self.id_doc_type_code = id_doc_type_code
+        self.id_doc_number = id_doc_number
+        self.id_doc_issuing_place_code = id_doc_issuing_place_code
+        self.driver_licence_number = driver_licence_number
+        self.driver_licence_issuing_place_code = driver_licence_issuing_place_code
+        self.contact = contact
+
+
+class SecondDriver:
+    """Second driver. If present, ALL fields become mandatory by spec."""
+
+    def __init__(
+        self,
+        surname: str,
+        name: str,
+        birth_date: str,
+        birth_place_code: int,
+        citizenship_code: int,
+        id_doc_type_code: str,
+        id_doc_number: str,
+        id_doc_issuing_place_code: int,
+        driver_licence_number: str,
+        driver_licence_issuing_place_code: int,
+        contact: Optional[str] = None,
+    ):
+        self.surname = surname
+        self.name = name
+        self.birth_date = birth_date
+        self.birth_place_code = birth_place_code
+        self.citizenship_code = citizenship_code
+        self.id_doc_type_code = id_doc_type_code
+        self.id_doc_number = id_doc_number
+        self.id_doc_issuing_place_code = id_doc_issuing_place_code
+        self.driver_licence_number = driver_licence_number
+        self.driver_licence_issuing_place_code = driver_licence_issuing_place_code
+        self.contact = contact
+
+
+class Operator:
+    """Operator and agency info."""
+
+    def __init__(
+        self,
+        id: str,
+        agency_id: str,
+        agency_name: str,
+        agency_place_code: int,  # 9 digits
+        agency_address: str,
+        agency_phone: str,
+    ):
+        self.id = id
+        self.agency_id = agency_id
+        self.agency_name = agency_name
+        self.agency_place_code = agency_place_code
+        self.agency_address = agency_address
+        self.agency_phone = agency_phone
+
+
 class BookingData:
-    """Normalized booking data used for Ca.R.G.O.S. mapping.
+    """Complete booking entity mapped 1:1 to the Ca.R.G.O.S. fixed-width record."""
 
-    Attributes
-    ----------
-    id : Optional[str]
-        Contract identifier.
-    creation_date : Optional[str]
-        Contract creation timestamp (ISO-like string).
-    from_date : Optional[str]
-        Vehicle checkout datetime (ISO-like string).
-    to_date : Optional[str]
-        Vehicle checkin datetime (ISO-like string).
-    car : Optional[Car]
-        Vehicle information.
-    customer : Optional[Customer]
-        Primary driver/customer details.
-    delivery_place : Optional[Address]
-        Checkout address (city used for location code).
-    return_place : Optional[Address]
-        Checkin address (city used for location code).
-    """
-
-    id: Optional[str] = None
-    creation_date: Optional[str] = None
-    from_date: Optional[str] = None
-    to_date: Optional[str] = None
-    car: Optional[Car] = None
-    customer: Optional[Customer] = None
-    delivery_place: Optional[Address] = None
-    return_place: Optional[Address] = None
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
+    def __init__(
+        self,
+        contract_id: str,
+        contract_datetime: str,     # mapper -> dd/mm/YYYY HH:MM
+        payment_type_code: str,     # 1 char (Tabella Tipo Pagamenti)
+        checkout_datetime: str,
+        checkout_place: Address,
+        checkin_datetime: str,
+        checkin_place: Address,
+        operator: Operator,
+        car: Car,
+        customer: Customer,
+        second_driver: Optional[SecondDriver] = None,
+    ):
+        self.contract_id = contract_id
+        self.contract_datetime = contract_datetime
+        self.payment_type_code = payment_type_code
+        self.checkout_datetime = checkout_datetime
+        self.checkout_place = checkout_place
+        self.checkin_datetime = checkin_datetime
+        self.checkin_place = checkin_place
+        self.operator = operator
+        self.car = car
+        self.customer = customer
+        self.second_driver = second_driver

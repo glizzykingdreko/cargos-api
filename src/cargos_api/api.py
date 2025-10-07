@@ -6,7 +6,7 @@ Notes
 -----
 - Handles token acquisition and wraps the /api/Check and /api/Send endpoints.
 - Expects the caller to provide fully-formed contract records (fixed-width
-  strings produced by DataToCargosMapper).
+  strings produced by CargosRecordMapper).
 - This module configures a module-level logger but does not attach handlers;
   handler configuration is the responsibility of the application using this
   library.
@@ -151,16 +151,10 @@ class CargosAPI:
         ------
         requests.RequestException
             On network errors or timeouts.
-        InvalidResponse
-            If the API returns an error payload.
         """
         url = f"{self.BASE_URL}/api/Check"
         resp = requests.post(url, headers=self._auth_headers(), json=contracts, timeout=timeout)
-        data = resp.json()
-        if (errore := data.get("errore")):
-            raise InvalidResponse(f"Check request failed: {errore}")
-        logger.info("Check completed for %d contracts", len(contracts))
-        return data
+        return resp.json()
 
     def send_contracts(self, contracts: list[str], timeout: int = 30) -> list[dict[str, Any]]:
         """Send contracts via /api/Send.

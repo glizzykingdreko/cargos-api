@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by Keep a Changelog; versions follow SemVer.
 
+
+## [0.2.1] - 2025-10-07
+### Added
+- Mapper: `build_record(..., collect_errors=True)` to collect validation issues instead of raising exceptions. The return shape becomes `(record, errors)` or `(record, mapping, errors)` when `with_map=True`.
+  Captured errors include:
+  - Residence pairing (code + street)
+  - Second driver all-or-nothing requirement
+  - Overall record length mismatch
+  - Missing required minima (`_validate_required_minima`)
+
+
 ## [0.2.0] - 2025-10-06
 ### Added
 - CargosRecordMapper.build_record now supports an optional flag `with_map=True` to also return a JSON-like mapping of field names to their exact padded slices. Useful for validating input data prior to submission.
